@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>포치 (Pochi)</title>
+<style>
+  :root {
+    --desktop-bg: #f7f8fa;
+    --desktop-border: #d4dae3;
+    --bookmark: #4f86e0;
+    --bookmark-dark: #3b6fc4;
+    --duration: 0.65s;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --rot: 0deg;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* ── 바탕화면 = 실제 윈도우 바탕화면 (투명) ── */
+  html, body { background: transparent !important; }
+  body {
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  }
+
+  /* ── 데스크톱 그룹 (데스크톱 + 웹사이트 + 책갈피) ──
+     책갈피는 이 그룹의 자식이라 언제나 패널에 붙어 있고, 접고 펼 때 같이 움직인다.
+     위치·크기는 JS가 넣는다. */
+  .desktop-group {
+    position: fixed;
+    left: 0; top: 0;
+    width: 50vw;
+    height: min(82vh, 900px);
+    transition: transform var(--duration) var(--ease);
+    will-change: transform;
+    z-index: 10;
+  }
+
+  /* 숨김 상태: 그룹 전체가 가장자리 밖으로 나가고 책갈피 끝만 남는다
+     (책갈피를 잡아당기면 패널이 딸려 나오는 느낌) */
+  .desktop-group.is-hidden.side-top    { transform: translateY(calc(-100% - 14px)); }
+  .desktop-group.is-hidden.side-bottom { transform: translateY(calc(100% + 14px)); }
+  .desktop-group.is-hidden.side-left   { transform: translateX(calc(-100% - 14px)); }
+  .desktop-group.is-hidden.side-right  { transform: translateX(calc(100% + 14px)); }
+
+  /* 책갈피를 끌어 옮기는 동안에는 애니메이션 없이 즉시 따라오게 */
+  .desktop-group.is-moving { transition: none; }
+
+  /* ── 데스크톱 프레임 ─────────────────────── */
+  .desktop {
+    width: 100%;
+    height: 100%;
+    background: var(--desktop-bg);
+    border: 1px solid var(--desktop-border);
+    box-shadow:
+      0 18px 44px rgba(40, 60, 90, 0.22),
+      0 4px 12px rgba(40, 60, 90, 0.10);
+    padding: 10px;
+  }
+  /* 화면 가장자리에 맞닿는 면은 각지게 (원본과 동일한 처리) */
+  .side-top    .desktop { border-radius: 0 0 14px 14px; }
+  .side-bottom .desktop { border-radius: 14px 14px 0 0; }
+  .side-left   .desktop { border-radius: 0 14px 14px 0; }
+  .side-right  .desktop { border-radius: 14px 0 0 14px; }
+
+  /* ── 기존 웹사이트 ───────────────────────── */
+  .desktop iframe {
+    width: 100%;
+    height: 100%;
+    border: 1px solid #e3e7ed;
+    border-radius: 8px;
+    background: #fff;
+    display: block;
+  }
+
+  /* ── 책갈피 ─────────────────────────────────
+     패널의 바깥쪽 면에 매달려 있고, 뾰족한 끝이 항상 화면 안쪽을 가리키도록 회전한다.
+     (위=0° / 오른쪽=90° / 아래=180° / 왼쪽=-90°) */
+  .bookmark {
+    position: absolute;
+    left: 0; top: 0;
+    width: 52px;
+    height: 74px;
+    border: none;
+    cursor: pointer;
+    z-index: 12;
+    touch-action: none;
+    opacity: 0;                       /* 저장된 자리를 읽기 전 깜빡임 방지 */
+    background: linear-gradient(180deg, var(--bookmark) 0%, var(--bookmark-dark) 100%);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%);
+    filter: drop-shadow(0 6px 10px rgba(40, 60, 90, 0.28));
+    /* 회전축 = 패널에 붙은 끝(윗변 가운데). 길이가 변해도 붙은 쪽은 절대 안 움직이고
+       화면 안쪽(자유로운 끝)으로만 늘어난다. */
+    transform-origin: 50% 0;
+    transform: rotate(var(--rot));
+    transition: height 0.22s var(--ease), filter 0.2s ease, opacity 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body.ready .bookmark { opacity: 1; }
+  .bookmark:focus-visible {
+    outline: 3px solid #fff;
+    outline-offset: -6px;
+  }
+
+  /* 접혀 있을 때 호버: 화면 안쪽으로 쑥 나와서 "잡아당겨라" 하고 내민다 */
+  .desktop-group.is-hidden .bookmark:hover  { height: 90px; filter: drop-shadow(0 8px 14px rgba(40, 60, 90, 0.36)); }
+  .desktop-group.is-hidden .bookmark:active { height: 82px; }
+
+  /* 열려 있을 때 호버: 패널 쪽은 그대로 붙어 있고 반대쪽만 살짝 길어진다 */
+  .desktop-group:not(.is-hidden) .bookmark:hover  { height: 84px; filter: drop-shadow(0 8px 14px rgba(40, 60, 90, 0.35)); }
+  .desktop-group:not(.is-hidden) .bookmark:active { height: 70px; }
+
+  /* 꾹 눌러 이동 모드 */
+  .bookmark.is-dragging,
+  .bookmark.is-dragging:hover,
+  .bookmark.is-dragging:active {
+    cursor: grabbing;
+    height: 90px;
+    filter: drop-shadow(0 14px 22px rgba(40, 60, 90, 0.45));
+    transition: filter 0.16s ease;
+  }
+
+  /* ── 크기 조절: 네 면 + 네 모서리 (아이콘 없는 투명 히트 영역) ──
+     화면 가장자리에 맞닿아 고정되는 면은 감춘다 */
+  .resize-handle {
+    position: absolute;
+    z-index: 5;
+    touch-action: none;
+    background: transparent;
+  }
+  .resize-handle.n { top: -6px;    left: 16px; right: 16px; height: 14px; cursor: ns-resize; }
+  .resize-handle.s { bottom: -6px; left: 16px; right: 16px; height: 14px; cursor: ns-resize; }
+  .resize-handle.w { left: -6px;   top: 16px; bottom: 16px; width: 14px;  cursor: ew-resize; }
+  .resize-handle.e { right: -6px;  top: 16px; bottom: 16px; width: 14px;  cursor: ew-resize; }
+
+  .resize-handle.nw, .resize-handle.ne,
+  .resize-handle.sw, .resize-handle.se { width: 26px; height: 26px; z-index: 6; }
+  .resize-handle.nw { top: -8px;    left: -8px;  cursor: nwse-resize; }
+  .resize-handle.ne { top: -8px;    right: -8px; cursor: nesw-resize; }
+  .resize-handle.sw { bottom: -8px; left: -8px;  cursor: nesw-resize; }
+  .resize-handle.se { bottom: -8px; right: -8px; cursor: nwse-resize; }
+
+  .side-top    .resize-handle.n, .side-top    .resize-handle.ne, .side-top    .resize-handle.nw,
+  .side-bottom .resize-handle.s, .side-bottom .resize-handle.se, .side-bottom .resize-handle.sw,
+  .side-left   .resize-handle.w, .side-left   .resize-handle.nw, .side-left   .resize-handle.sw,
+  .side-right  .resize-handle.e, .side-right  .resize-handle.ne, .side-right  .resize-handle.se {
+    display: none;
+  }
+
+  /* 드래그 중에는 iframe이 포인터를 삼키지 않게 + 애니메이션 끔 */
+  .desktop-group.is-resizing { transition: none; }
+  .desktop-group.is-resizing iframe { pointer-events: none; }
+  .desktop-group.is-resizing, .desktop-group.is-resizing * { user-select: none; }
+
+  /* ── 모션 최소화 환경 ───────────────────── */
+  @media (prefers-reduced-motion: reduce) {
+    .desktop-group { transition-duration: 0.01s; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="desktop-group side-top is-hidden" id="desktopGroup">
+    <div class="desktop">
+      <iframe src="https://schedule.pochi-day.com/" title="포치 (Pochi)"></iframe>
+    </div>
+
+    <button class="bookmark" id="bookmarkBtn"
+            type="button"
+            aria-pressed="true"
+            title="클릭: 열기 / 닫기 · 꾹 누르고 끌기: 가장자리 따라 이동"
+            aria-label="데스크톱 숨기기 / 표시"></button>
+
+    <div class="resize-handle n"  data-dir="n"  aria-hidden="true"></div>
+    <div class="resize-handle s"  data-dir="s"  aria-hidden="true"></div>
+    <div class="resize-handle w"  data-dir="w"  aria-hidden="true"></div>
+    <div class="resize-handle e"  data-dir="e"  aria-hidden="true"></div>
+    <div class="resize-handle nw" data-dir="nw" aria-hidden="true"></div>
+    <div class="resize-handle ne" data-dir="ne" aria-hidden="true"></div>
+    <div class="resize-handle sw" data-dir="sw" aria-hidden="true"></div>
+    <div class="resize-handle se" data-dir="se" aria-hidden="true"></div>
+  </div>
+
+  <script>
+    const panel = document.getElementById('desktopGroup');
+    const bm    = document.getElementById('bookmarkBtn');
+
+    const BM_W = 52, BM_H = 74;          /* 책갈피 크기 (회전 전 기준) */
+    const OVER = 14;                     /* 패널이 화면 가장자리 밖으로 걸치는 길이 (원본 top:-14px) */
+    const MIN_W = 280, MIN_H = 200;      /* 패널 최소 크기 */
+    const MARGIN = 10;                   /* 패널이 화면 밖으로 잘리지 않게 두는 여백 */
+    const TAB_RATIO = 0.91;              /* 원본에서 책갈피가 놓이던 지점 (right: 9%) */
+    const HOLD_MS = 300;                 /* "꾹" 판정 시간 */
+    const MOVE_TOL = 6;                  /* 이 이상 움직이면 꾹 누르기 취소 */
+
+    const ROT = { top: 0, right: 90, bottom: 180, left: -90 };
+
+    let open = false;
+    let dragging = false;
+    let tab  = null;                     /* { edge, t } — 접힌 상태에서 책갈피가 놓인 가장자리와 위치 */
+    let box  = null;                     /* { w, h, offX, offY } — off = 패널 시작 모서리에서 책갈피 중심까지 */
+    let setInteractive = () => {};       /* 아래 Electron 블록에서 채워짐 */
+
+    const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+    const num = v => typeof v === 'number' && isFinite(v);
+    const isVert = e => e === 'left' || e === 'right';
+
+    function defaults() {
+      const w = Math.round(innerWidth * 0.5);
+      const h = Math.round(Math.min(innerHeight * 0.82, 900));
+      return {
+        tab: { edge: 'top', t: 0.91 },
+        box: { w, h, offX: Math.round(TAB_RATIO * w - BM_W / 2), offY: Math.round(h / 2) },
+      };
+    }
+
+    /* ── 저장: Electron이면 userData JSON, 브라우저면 localStorage ── */
+    const store = {
+      async load() {
+        const ov = window.pochiOverlay;
+        if (ov && ov.loadState) { try { return (await ov.loadState()) || {}; } catch (_) { return {}; } }
+        try { return JSON.parse(localStorage.getItem('pochi:overlay') || '{}'); } catch (_) { return {}; }
+      },
+      save(state) {
+        const ov = window.pochiOverlay;
+        if (ov && ov.saveState) { ov.saveState(state); return; }
+        try { localStorage.setItem('pochi:overlay', JSON.stringify(state)); } catch (_) {}
+      },
+    };
+
+    let saveTimer = null;
+    function persist() {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => store.save({ tab, box }), 150);
+    }
+
+    function layout() {
+      const vw = innerWidth, vh = innerHeight;
+      const horiz = !isVert(tab.edge);
+
+      /* 크기: 열었을 때 패널도 책갈피도 화면 안에 다 들어오는 범위까지만 */
+      let W, H;
+      if (horiz) {
+        W = clamp(box.w, MIN_W, Math.max(MIN_W, vw - MARGIN * 2));
+        H = clamp(box.h, MIN_H, Math.max(MIN_H, vh - MARGIN - BM_H + OVER));
+      } else {
+        W = clamp(box.w, MIN_W, Math.max(MIN_W, vw - MARGIN - BM_H + OVER));
+        H = clamp(box.h, MIN_H, Math.max(MIN_H, vh - MARGIN * 2));
+      }
+      /* 여기서 한 번만 정수로 맞춘다 — 패널과 책갈피가 1px 어긋나 틈이 보이는 걸 막는다 */
+      W = Math.round(W); H = Math.round(H);
+
+      /* 접힌 상태에서 책갈피 중심이 놓일 가장자리 위 좌표 */
+      const along = horiz
+        ? clamp(tab.t * vw, BM_W / 2, Math.max(BM_W / 2, vw - BM_W / 2))
+        : clamp(tab.t * vh, BM_W / 2, Math.max(BM_W / 2, vh - BM_W / 2));
+
+      /* 그룹 위치: 붙은 면은 화면 밖으로 OVER만큼 걸치고, 교차축은 화면 안으로 */
+      let GL, GT, off;
+      if (horiz) {
+        GL  = Math.round(clamp(along - box.offX, MARGIN, Math.max(MARGIN, vw - MARGIN - W)));
+        off = Math.round(clamp(along - GL, BM_W / 2, Math.max(BM_W / 2, W - BM_W / 2)));
+        GT  = tab.edge === 'top' ? -OVER : vh - H + OVER;
+      } else {
+        GT  = Math.round(clamp(along - box.offY, MARGIN, Math.max(MARGIN, vh - MARGIN - H)));
+        off = Math.round(clamp(along - GT, BM_W / 2, Math.max(BM_W / 2, H - BM_W / 2)));
+        GL  = tab.edge === 'left' ? -OVER : vw - W + OVER;
+      }
+
+      panel.style.left   = Math.round(GL) + 'px';
+      panel.style.top    = Math.round(GT) + 'px';
+      panel.style.width  = W + 'px';
+      panel.style.height = H + 'px';
+      ['top', 'right', 'bottom', 'left'].forEach(e =>
+        panel.classList.toggle('side-' + e, tab.edge === e));
+
+      /* 책갈피: 패널 바깥면에 매달기.
+         회전축이 윗변 가운데(transform-origin: 50% 0)라, 그 점을 패널 면 위에 놓기만 하면
+         네 방향 모두 붙은 채로 화면 안쪽을 향한다. */
+      bm.style.setProperty('--rot', ROT[tab.edge] + 'deg');
+      switch (tab.edge) {
+        case 'top':    bm.style.left = (off - BM_W / 2) + 'px'; bm.style.top = H + 'px';   break;
+        case 'bottom': bm.style.left = (off - BM_W / 2) + 'px'; bm.style.top = '0px';      break;
+        case 'left':   bm.style.left = (W - BM_W / 2) + 'px';   bm.style.top = off + 'px'; break;
+        case 'right':  bm.style.left = (-BM_W / 2) + 'px';      bm.style.top = off + 'px'; break;
+      }
+    }
+
+    function setOpen(v) {
+      open = !!v;
+      panel.classList.toggle('is-hidden', !open);
+      bm.setAttribute('aria-pressed', String(!open));
+    }
+
+    /* 포인터에서 가장 가까운 가장자리 + 그 가장자리에서의 위치 */
+    function edgeFromPoint(x, y) {
+      const vw = innerWidth, vh = innerHeight;
+      const d = { top: y, bottom: vh - y, left: x, right: vw - x };
+      let edge = 'top';
+      for (const k in d) if (d[k] < d[edge]) edge = k;
+      const t = isVert(edge) ? y / vh : x / vw;
+      return { edge, t: clamp(t, 0, 1) };
+    }
+
+    /* ── 책갈피: 짧게 누르면 열기·닫기 / 꾹 누르고 끌면 가장자리를 따라 이동 ──
+       이동은 패널이 접혀 있을 때만 (열린 상태에서는 클릭만) */
+    let press = null;
+
+    bm.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      const r = bm.getBoundingClientRect();
+      press = {
+        id: e.pointerId,
+        x: e.clientX, y: e.clientY,
+        gx: r.left + r.width / 2 - e.clientX,     /* 잡은 지점과 책갈피 중심의 차이 */
+        gy: r.top + r.height / 2 - e.clientY,
+        moved: false, hold: false, timer: null,
+      };
+      if (open) return;                    /* 열린 상태에선 이동 금지 */
+      press.timer = setTimeout(() => {
+        if (!press || press.moved) return;
+        press.hold = true;
+        dragging = true;
+        bm.classList.add('is-dragging');
+        panel.classList.add('is-moving');   /* 끄는 동안엔 슬라이드 애니메이션 끔 */
+        setInteractive(true);               /* 책갈피 밖으로 나가도 마우스를 계속 받게 */
+        try { bm.setPointerCapture(press.id); } catch (_) {}
+      }, HOLD_MS);
+    });
+
+    bm.addEventListener('pointermove', e => {
+      if (!press) return;
+      if (press.hold) {
+        tab = edgeFromPoint(e.clientX + press.gx, e.clientY + press.gy);
+        layout();
+        return;
+      }
+      const dx = e.clientX - press.x, dy = e.clientY - press.y;
+      if (Math.abs(dx) > MOVE_TOL || Math.abs(dy) > MOVE_TOL) {
+        press.moved = true;                /* 꾹 누르기 취소 (그냥 스쳐 지나간 것) */
+        clearTimeout(press.timer);
+      }
+    });
+
+    function endPress() {
+      if (!press) return;
+      clearTimeout(press.timer);
+      const held = press.hold, moved = press.moved;
+      try { bm.releasePointerCapture(press.id); } catch (_) {}
+      press = null;
+
+      if (held) {
+        dragging = false;
+        bm.classList.remove('is-dragging');
+        layout();
+        /* 다음 프레임에 애니메이션 복구 (지금 켜면 놓는 순간 미끄러진다) */
+        requestAnimationFrame(() => panel.classList.remove('is-moving'));
+        persist();
+      } else if (!moved) {
+        setOpen(!open);
+      }
+    }
+    bm.addEventListener('pointerup', endPress);
+    bm.addEventListener('pointercancel', endPress);
+
+    /* 키보드(Enter/Space)로 누른 경우만 click으로 토글 */
+    bm.addEventListener('click', e => { if (e.detail === 0) setOpen(!open); });
+
+    /* ── 네 면·네 모서리 드래그로 크기 조절 ──
+       화면 가장자리에 붙은 면은 고정, 잡은 면이 포인터를 그대로 따라온다 */
+    function startResize(e) {
+      if (!open) return;
+      const handle = e.currentTarget;
+      const dir = handle.dataset.dir;
+      const rect = panel.getBoundingClientRect();
+      const br = bm.getBoundingClientRect();
+      const vert = isVert(tab.edge);
+      const startX = e.clientX, startY = e.clientY;
+      const startW = rect.width, startH = rect.height;
+      const startOffX = br.left + br.width / 2 - rect.left;
+      const startOffY = br.top + br.height / 2 - rect.top;
+
+      panel.classList.add('is-resizing');
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+
+      const onMove = ev => {
+        const dx = ev.clientX - startX, dy = ev.clientY - startY;
+        let w = startW, h = startH, offX = startOffX, offY = startOffY;
+
+        if (dir.indexOf('w') >= 0) { w = startW - dx; if (!vert) offX = startOffX - dx; }
+        if (dir.indexOf('e') >= 0) { w = startW + dx; }
+        if (dir.indexOf('n') >= 0) { h = startH - dy; if (vert)  offY = startOffY - dy; }
+        if (dir.indexOf('s') >= 0) { h = startH + dy; }
+
+        box.w = clamp(w, MIN_W, innerWidth);
+        box.h = clamp(h, MIN_H, innerHeight);
+        if (vert) box.offY = offY; else box.offX = offX;
+        layout();
+      };
+      const onUp = ev => {
+        panel.classList.remove('is-resizing');
+        try { handle.releasePointerCapture(ev.pointerId); } catch (_) {}
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onUp);
+        persist();                          /* 조절한 크기를 저장 */
+      };
+
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onUp);
+    }
+
+    document.querySelectorAll('.resize-handle').forEach(h => {
+      h.addEventListener('pointerdown', startResize);
+    });
+
+    /* 화면 크기가 바뀌어도 가장자리 비율을 유지 */
+    addEventListener('resize', () => { layout(); persist(); });
+
+    /* ── Electron 오버레이: 패널·책갈피 위에서만 클릭을 받고 나머지는 바탕화면으로 통과 ── */
+    (function () {
+      const ov = window.pochiOverlay;
+      if (!ov) return;                      /* 일반 브라우저에서 열면 그냥 무시 */
+      let interactive = null;
+      const set = on => { if (on !== interactive) { interactive = on; ov.setInteractive(on); } };
+      setInteractive = set;
+
+      const zones = () => {
+        const z = [bm];
+        if (open) {
+          z.push(panel.querySelector('.desktop'));
+          panel.querySelectorAll('.resize-handle').forEach(h => {
+            if (h.offsetParent !== null) z.push(h);     /* 감춰진 면은 제외 */
+          });
+        }
+        return z;
+      };
+      const over = (x, y) => dragging || zones().some(el => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();   /* 회전·이동이 다 반영된 실제 화면 영역 */
+        return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+      });
+
+      addEventListener('mousemove', e => set(over(e.clientX, e.clientY)));
+      addEventListener('mouseleave', () => { if (!dragging) set(false); });
+      set(false);
+
+      /* 트레이 아이콘/메뉴 → 패널 접기·펴기 */
+      ov.onToggle(() => setOpen(!open));
+    })();
+
+    /* ── 시작: 저장된 자리·크기 복원 ── */
+    (async function () {
+      const saved = await store.load();
+      const d = defaults();
+      tab = (saved.tab && ROT[saved.tab.edge] !== undefined && num(saved.tab.t))
+        ? { edge: saved.tab.edge, t: clamp(saved.tab.t, 0, 1) } : d.tab;
+
+      const s = saved.box;
+      box = (s && num(s.w) && num(s.h)) ? {
+        w: s.w, h: s.h,
+        offX: num(s.offX) ? s.offX : Math.round(TAB_RATIO * s.w - BM_W / 2),
+        offY: num(s.offY) ? s.offY : Math.round(s.h / 2),
+      } : d.box;
+
+      layout();
+      document.body.classList.add('ready');
+    })();
+  </script>
+
+</body>
+</html>

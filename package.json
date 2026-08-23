@@ -1,0 +1,13 @@
+{
+  "name": "pochi-desktop",
+  "version": "1.0.0",
+  "description": "포치 (Pochi) 데스크톱 앱",
+  "main": "main.js",
+  "author": "Pochi",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
