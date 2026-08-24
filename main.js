@@ -49,8 +49,9 @@ function createWindow() {
   win.setIgnoreMouseEvents(true, { forward: true });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    // 구글 로그인(GIS) 팝업 → 앱 위에 크게 중앙 정렬된 창으로 (구글은 iframe 임베드를 막음)
-    if (/^https:\/\/(accounts\.google\.com|[a-z0-9-]+\.googleusercontent\.com)\//.test(url)) {
+    // 구글/Firebase 로그인 팝업 → 앱 위에 크게 중앙 정렬된 창으로 (구글은 iframe 임베드를 막음).
+    // Firebase Auth는 pochi-*.firebaseapp.com/__/auth/handler 팝업을 먼저 열므로 이것도 허용해야 한다.
+    if (/^https:\/\/(accounts\.google\.com|[a-z0-9-]+\.googleusercontent\.com|[a-z0-9-]+\.firebaseapp\.com)\//.test(url)) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
