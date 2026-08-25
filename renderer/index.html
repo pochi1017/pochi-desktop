@@ -203,6 +203,7 @@
 
     let open = false;
     let dragging = false;
+    let resizing = false;                /* 크기조절 중 플래그 — 클릭통과 잠금 + 존 재측정 생략 */
     let tab  = null;                     /* { edge, t } — 접힌 상태에서 책갈피가 놓인 가장자리와 위치 */
     let box  = null;                     /* { w, h, offX, offY } — off = 패널 시작 모서리에서 책갈피 중심까지 */
     let setInteractive = () => {};       /* 아래 Electron 블록에서 채워짐 */
@@ -387,6 +388,8 @@
       const startOffY = br.top + br.height / 2 - rect.top;
 
       panel.classList.add('is-resizing');
+      resizing = true;
+      setInteractive(true);               /* 조절 내내 창을 interactive로 잠가 pointerup을 확실히 받는다 */
       try { handle.setPointerCapture(e.pointerId); } catch (_) {}
 
       const onMove = ev => {
@@ -405,6 +408,7 @@
       };
       const onUp = ev => {
         panel.classList.remove('is-resizing');
+        resizing = false;
         try { handle.releasePointerCapture(ev.pointerId); } catch (_) {}
         handle.removeEventListener('pointermove', onMove);
         handle.removeEventListener('pointerup', onUp);
@@ -442,14 +446,14 @@
         }
         return z;
       };
-      const over = (x, y) => dragging || zones().some(el => {
+      const over = (x, y) => dragging || resizing || zones().some(el => {
         if (!el) return false;
         const r = el.getBoundingClientRect();   /* 회전·이동이 다 반영된 실제 화면 영역 */
         return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
       });
 
       addEventListener('mousemove', e => set(over(e.clientX, e.clientY)));
-      addEventListener('mouseleave', () => { if (!dragging) set(false); });
+      addEventListener('mouseleave', () => { if (!dragging && !resizing) set(false); });
       set(false);
 
       /* 트레이 아이콘/메뉴 → 패널 접기·펴기 */
