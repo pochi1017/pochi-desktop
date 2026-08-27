@@ -484,6 +484,33 @@
       layout();
       document.body.classList.add('ready');
     })();
+
+    /* ── 앱 색 설정 → 책갈피 색 (crossorigin이라 postMessage로 받음) ── */
+    (function () {
+      function darken(hex, f) {
+        const m = /^#?([0-9a-fA-F]{6})$/.exec(String(hex || '').trim());
+        if (!m) return null;
+        const n = parseInt(m[1], 16);
+        let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+        r = Math.round(r * f); g = Math.round(g * f); b = Math.round(b * f);
+        return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+      }
+      function applyColor(hex) {
+        const main = darken(hex, 1);          /* 정규화 겸 유효성 검사 */
+        if (!main) return;
+        document.documentElement.style.setProperty('--bookmark', main);
+        document.documentElement.style.setProperty('--bookmark-dark', darken(hex, 0.8));
+        try { localStorage.setItem('pochi:bookmarkColor', main); } catch (e) {}
+      }
+      /* 껐다 켜도 유지: 마지막 색 복원 (앱이 다시 쏘기 전까지) */
+      try { const saved = localStorage.getItem('pochi:bookmarkColor'); if (saved) applyColor(saved); } catch (e) {}
+      /* 웹앱(iframe)에서 보낸 색만 수신 */
+      window.addEventListener('message', function (e) {
+        if (e.origin !== 'https://schedule.pochi-day.com') return;
+        const d = e.data;
+        if (d && d.type === 'pochi:color' && d.hex) applyColor(d.hex);
+      });
+    })();
   </script>
 
 </body>
