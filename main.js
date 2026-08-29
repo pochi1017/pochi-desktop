@@ -26,6 +26,7 @@ function zzNotionExchange(callbackUrl) {
     const mode = u.searchParams.get('state') || 'new';
     if (!code) { zzLog('exchange: no code'); return; }
     zzLog('exchange start mode=' + mode + ' code=' + code.slice(0, 8) + '…');
+    try { win && win.webContents.send('notion:result', { pending: true }); } catch (e) {}  // 앱에 "연결 중" 표시
     fetch(ZZ_PROXY, { method: 'POST', body: JSON.stringify({ action: 'oauth_exchange', code: code, mode: mode }) })
       .then((r) => r.text())
       .then((t) => {
