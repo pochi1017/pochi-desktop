@@ -124,6 +124,19 @@ function createWindow() {
         if (/^https?:\/\//.test(url)) shell.openExternal(url);
         return { action: 'deny' };
       });
+      // 취소/거부로 콜백이 code 없이 schedule.pochi-day.com으로 돌아오면 캘린더북을 띄우지 말고 창을 닫는다.
+      // (성공 시엔 ?code= 가 붙어 오므로 통과시켜 교환→pochi:notion-done→닫기 흐름을 그대로 탄다.)
+      const zzCancelIfNoCode = (ev, url) => {
+        try {
+          if (/^https:\/\/schedule\.pochi-day\.com\//.test(url || '') && !/[?&]code=/.test(url || '')) {
+            if (ev && ev.preventDefault) ev.preventDefault();
+            child.close();
+          }
+        } catch (_) {}
+      };
+      child.webContents.on('will-redirect', zzCancelIfNoCode);
+      child.webContents.on('will-navigate', zzCancelIfNoCode);
+      child.webContents.on('did-navigate', (e, url) => zzCancelIfNoCode(null, url));
       // 승인·저장이 끝나면 앱이 document.title='pochi:notion-done'을 세운다 → 그 창을 닫는다.
       child.webContents.on('page-title-updated', (e, title) => {
         if (title === 'pochi:notion-done') { try { child.close(); } catch (_) {} }
