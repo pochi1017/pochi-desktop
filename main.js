@@ -28,6 +28,26 @@ function writeState(state) {
   } catch (e) {}
 }
 
+// 노션 OAuth 콜백(schedule.pochi-day.com?code=)을 보이는 창에 렌더하지 않고, 숨은 창에서 조용히
+// 토큰 교환만 수행한다. 앱(zzNxSync)이 location.search의 code로 교환→저장 후 document.title=
+// 'pochi:notion-done'을 세우면 이 창을 닫는다. 세션(IndexedDB)은 메인 창과 공유(같은 origin·기본 세션)라
+// 저장된 토큰이 위젯에 반영된다.
+function zzExchangeHidden(url) {
+  try {
+    const hidden = new BrowserWindow({
+      show: false,
+      webPreferences: { contextIsolation: true, nodeIntegration: false },
+    });
+    let done = false;
+    const finish = () => { if (done) return; done = true; try { if (!hidden.isDestroyed()) hidden.close(); } catch (_) {} };
+    // 숨은 창에서 어떤 팝업도 못 뜨게(보이는 창이 튀어나오는 것 방지).
+    hidden.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    hidden.webContents.on('page-title-updated', (e, title) => { if (title === 'pochi:notion-done') finish(); });
+    setTimeout(finish, 30000); // 안전장치: 신호를 못 받아도 30초 후 정리
+    hidden.loadURL(url);
+  } catch (_) {}
+}
+
 function createWindow() {
   const b = screen.getPrimaryDisplay().bounds; // 전체 화면 영역
   win = new BrowserWindow({
@@ -113,33 +133,34 @@ function createWindow() {
       if (!/^https:\/\/([a-z0-9-]+\.)?notion\.(so|com)\//.test(details.url || '')) return;
       // 투명 오버레이(screen-saver 레벨) 위에 확실히 뜨게. 모달이 아니므로 메인은 계속 클릭 가능.
       try { child.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
-      // 노션 연결은 이 한 창 안에서만 진행한다: 워크스페이스 선택·오류 확인 등에서 target=_blank가 나와도
-      // 새 창을 띄우지 않고 같은 창에서 이동한다(사용자가 "새 창이 계속 열린다"고 한 문제). 콜백(redirect_uri)도 같은 창.
+
+      // 콜백(schedule.pochi-day.com)에 도달하면 보이는 창에 캘린더북을 절대 렌더하지 않는다.
+      //  - code 있음(승인 성공): 숨은 창에서 조용히 토큰 교환 → 보이는 창 즉시 닫기.
+      //  - code 없음(취소/거부): 그냥 닫기.
+      let zzHandled = false;
+      const zzOnCallback = (ev, url) => {
+        try {
+          if (zzHandled) return;
+          if (!/^https:\/\/schedule\.pochi-day\.com\//.test(url || '')) return;
+          zzHandled = true;
+          if (ev && ev.preventDefault) ev.preventDefault();      // 보이는 창의 캘린더북 로드 자체를 막음
+          if (/[?&]code=/.test(url)) zzExchangeHidden(url);       // 성공: 숨은 창에서 교환
+          try { child.close(); } catch (_) {}
+        } catch (_) {}
+      };
+      child.webContents.on('will-redirect', zzOnCallback);
+      child.webContents.on('will-navigate', zzOnCallback);
+      child.webContents.on('did-navigate', (e, url) => zzOnCallback(null, url)); // 폴백: 못 막았어도 즉시 닫기
+
+      // 노션 연결은 이 한 창 안에서만 진행(새 창 난립 차단). 콜백이 window.open로 와도 위 처리로 넘긴다.
       child.webContents.setWindowOpenHandler(({ url }) => {
-        if (/^https:\/\/([a-z0-9-]+\.)?notion\.(so|com)\//.test(url) ||
-            /^https:\/\/schedule\.pochi-day\.com\//.test(url)) {
+        if (/^https:\/\/schedule\.pochi-day\.com\//.test(url)) { zzOnCallback(null, url); return { action: 'deny' }; }
+        if (/^https:\/\/([a-z0-9-]+\.)?notion\.(so|com)\//.test(url)) {
           try { child.webContents.loadURL(url); } catch (_) {}
           return { action: 'deny' };
         }
         if (/^https?:\/\//.test(url)) shell.openExternal(url);
         return { action: 'deny' };
-      });
-      // 취소/거부로 콜백이 code 없이 schedule.pochi-day.com으로 돌아오면 캘린더북을 띄우지 말고 창을 닫는다.
-      // (성공 시엔 ?code= 가 붙어 오므로 통과시켜 교환→pochi:notion-done→닫기 흐름을 그대로 탄다.)
-      const zzCancelIfNoCode = (ev, url) => {
-        try {
-          if (/^https:\/\/schedule\.pochi-day\.com\//.test(url || '') && !/[?&]code=/.test(url || '')) {
-            if (ev && ev.preventDefault) ev.preventDefault();
-            child.close();
-          }
-        } catch (_) {}
-      };
-      child.webContents.on('will-redirect', zzCancelIfNoCode);
-      child.webContents.on('will-navigate', zzCancelIfNoCode);
-      child.webContents.on('did-navigate', (e, url) => zzCancelIfNoCode(null, url));
-      // 승인·저장이 끝나면 앱이 document.title='pochi:notion-done'을 세운다 → 그 창을 닫는다.
-      child.webContents.on('page-title-updated', (e, title) => {
-        if (title === 'pochi:notion-done') { try { child.close(); } catch (_) {} }
       });
     } catch (_) {}
   });
