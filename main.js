@@ -87,11 +87,12 @@ function createWindow() {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
-          width: 720,
-          height: 820,
+          width: 760,
+          height: 860,
           center: true,
-          parent: win,
-          modal: true,
+          // 모달·부모 종속 없음: 연결이 실패(예: 게스트 403)해도 메인 캘린더북을 계속 클릭할 수 있어야 한다.
+          // 대신 alwaysOnTop으로 투명 오버레이(screen-saver 레벨) 위에 뜨게 한다.
+          alwaysOnTop: true,
           transparent: false,
           frame: true,
           resizable: true,
@@ -106,10 +107,24 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // 노션 연결 자식 창: 승인·저장이 끝나면 앱이 document.title='pochi:notion-done'을 세운다 → 그 창을 닫는다.
+  // 노션 연결 자식 창 후처리
   win.webContents.on('did-create-window', (child, details) => {
     try {
       if (!/^https:\/\/([a-z0-9-]+\.)?notion\.(so|com)\//.test(details.url || '')) return;
+      // 투명 오버레이(screen-saver 레벨) 위에 확실히 뜨게. 모달이 아니므로 메인은 계속 클릭 가능.
+      try { child.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+      // 노션 연결은 이 한 창 안에서만 진행한다: 워크스페이스 선택·오류 확인 등에서 target=_blank가 나와도
+      // 새 창을 띄우지 않고 같은 창에서 이동한다(사용자가 "새 창이 계속 열린다"고 한 문제). 콜백(redirect_uri)도 같은 창.
+      child.webContents.setWindowOpenHandler(({ url }) => {
+        if (/^https:\/\/([a-z0-9-]+\.)?notion\.(so|com)\//.test(url) ||
+            /^https:\/\/schedule\.pochi-day\.com\//.test(url)) {
+          try { child.webContents.loadURL(url); } catch (_) {}
+          return { action: 'deny' };
+        }
+        if (/^https?:\/\//.test(url)) shell.openExternal(url);
+        return { action: 'deny' };
+      });
+      // 승인·저장이 끝나면 앱이 document.title='pochi:notion-done'을 세운다 → 그 창을 닫는다.
       child.webContents.on('page-title-updated', (e, title) => {
         if (title === 'pochi:notion-done') { try { child.close(); } catch (_) {} }
       });
