@@ -93,6 +93,16 @@ function createWindow() {
     if (/^https?:\/\//.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+
+  // 노션 연결 자식 창: 승인·저장이 끝나면 앱이 document.title='pochi:notion-done'을 세운다 → 그 창을 닫는다.
+  win.webContents.on('did-create-window', (child, details) => {
+    try {
+      if (!/^https:\/\/([a-z0-9-]+\.)?notion\.(so|com)\//.test(details.url || '')) return;
+      child.webContents.on('page-title-updated', (e, title) => {
+        if (title === 'pochi:notion-done') { try { child.close(); } catch (_) {} }
+      });
+    } catch (_) {}
+  });
 }
 
 // 렌더러가 "패널 위에 커서 있음/없음"을 알려주면 클릭 통과 토글
