@@ -12,6 +12,34 @@ if (process.platform === 'win32') app.setAppUserModelId('com.pochi.calendarbook'
 // 창·작업표시줄 아이콘 = 당근(트레이와 동일 원본). 지정 안 하면 기본 Electron 아이콘이 뜬다.
 const appIcon = nativeImage.createFromPath(path.join(__dirname, 'tray-icon.png'));
 
+// ── 노션 OAuth 교환을 데스크톱(Node)에서 단 한 번 수행 ──────────────────────────
+// child 인증창과 iframe이 같은 1회용 code를 각각 교환하던 레이스(invalid_grant)를 원천 차단.
+// Node fetch는 CORS 없음(실측: 프록시가 Node POST에 JSON 응답). 결과 {token,dbId,...}만 iframe에 전달.
+const ZZ_PROXY = 'https://script.google.com/macros/s/AKfycbwZ1MYe13y_ePdU3nqNfz4IBQRUrGDeqlExtl8Uogn12Z7S_3E9erlkXMCBNgFqaGMKtw/exec';
+function zzLog(msg) {
+  try { fs.appendFileSync(path.join(app.getPath('userData'), 'notion-debug.log'), new Date().toISOString() + ' ' + msg + '\n'); } catch (e) {}
+}
+function zzNotionExchange(callbackUrl) {
+  try {
+    const u = new URL(callbackUrl);
+    const code = u.searchParams.get('code');
+    const mode = u.searchParams.get('state') || 'new';
+    if (!code) { zzLog('exchange: no code'); return; }
+    zzLog('exchange start mode=' + mode + ' code=' + code.slice(0, 8) + '…');
+    fetch(ZZ_PROXY, { method: 'POST', body: JSON.stringify({ action: 'oauth_exchange', code: code, mode: mode }) })
+      .then((r) => r.text())
+      .then((t) => {
+        let j; try { j = JSON.parse(t); } catch (e) { j = { ok: false, error: 'parse: ' + t.slice(0, 150) }; }
+        zzLog('exchange result: ' + JSON.stringify({ ok: j.ok, dbId: j.dbId, ws: j.workspace, error: j.error }));
+        try { win && win.webContents.send('notion:result', j); } catch (e) {}
+      })
+      .catch((e) => {
+        zzLog('exchange fetch err: ' + String(e));
+        try { win && win.webContents.send('notion:result', { ok: false, error: String(e) }); } catch (_) {}
+      });
+  } catch (e) { zzLog('exchange throw: ' + String(e)); }
+}
+
 // 책갈피 위치·패널 크기 저장 (껐다 켜도 그대로)
 const storeFile = () => path.join(app.getPath('userData'), 'overlay-state.json');
 
@@ -126,7 +154,7 @@ function createWindow() {
           if (!/^https:\/\/schedule\.pochi-day\.com\//.test(url || '')) return;
           zzHandled = true;
           if (ev && ev.preventDefault) ev.preventDefault();      // 보이는 창의 캘린더북 로드 자체를 막음
-          if (/[?&]code=/.test(url)) { try { win.webContents.send('notion:callback', url); } catch (_) {} }
+          if (/[?&]code=/.test(url)) zzNotionExchange(url);       // 성공: 데스크톱(Node)에서 단일 교환 → 결과를 iframe에 전달
           try { child.close(); } catch (_) {}
         } catch (_) {}
       };

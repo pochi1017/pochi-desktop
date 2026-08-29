@@ -512,17 +512,17 @@
       });
     })();
 
-    /* 노션 OAuth 콜백: main이 보낸 콜백 URL(?code=)로 iframe을 이동시켜 **iframe 파티션 안에서** 교환.
-       별도 창에서 교환하면 저장소 파티셔닝 때문에 토큰이 앱과 다른 파티션에 저장됨(실측 확인). */
+    /* 노션 OAuth 교환 결과 수신: main(Node)이 단일 교환한 {token,dbId,...}를 iframe(앱)에 postMessage로 전달.
+       앱은 이 결과를 자기 파티션 IndexedDB에 저장 → 연결·월보기·양방향 동기화. (code를 앱이 직접 교환하지 않아
+       child/iframe 이중 교환 레이스가 원천 불가능.) */
     (function () {
       try {
         var ov = window.pochiOverlay;
-        if (!ov || !ov.onNotionCallback) return;
-        ov.onNotionCallback(function (url) {
+        if (!ov || !ov.onNotionResult) return;
+        ov.onNotionResult(function (result) {
           try {
-            if (!/^https:\/\/schedule\.pochi-day\.com\//.test(url || '')) return;
             var f = document.getElementById('pochiFrame');
-            if (f) f.src = url;   // iframe 리로드 → 앱 zzNxSync가 code로 교환·저장(같은 파티션) → 연결·월보기·동기화
+            if (f && f.contentWindow) f.contentWindow.postMessage({ type: 'pochi:notion-result', result: result }, 'https://schedule.pochi-day.com');
           } catch (e) {}
         });
       } catch (e) {}
