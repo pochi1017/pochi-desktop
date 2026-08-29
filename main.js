@@ -28,26 +28,6 @@ function writeState(state) {
   } catch (e) {}
 }
 
-// 노션 OAuth 콜백(schedule.pochi-day.com?code=)을 보이는 창에 렌더하지 않고, 숨은 창에서 조용히
-// 토큰 교환만 수행한다. 앱(zzNxSync)이 location.search의 code로 교환→저장 후 document.title=
-// 'pochi:notion-done'을 세우면 이 창을 닫는다. 세션(IndexedDB)은 메인 창과 공유(같은 origin·기본 세션)라
-// 저장된 토큰이 위젯에 반영된다.
-function zzExchangeHidden(url) {
-  try {
-    const hidden = new BrowserWindow({
-      show: false,
-      webPreferences: { contextIsolation: true, nodeIntegration: false },
-    });
-    let done = false;
-    const finish = () => { if (done) return; done = true; try { if (!hidden.isDestroyed()) hidden.close(); } catch (_) {} };
-    // 숨은 창에서 어떤 팝업도 못 뜨게(보이는 창이 튀어나오는 것 방지).
-    hidden.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    hidden.webContents.on('page-title-updated', (e, title) => { if (title === 'pochi:notion-done') finish(); });
-    setTimeout(finish, 30000); // 안전장치: 신호를 못 받아도 30초 후 정리
-    hidden.loadURL(url);
-  } catch (_) {}
-}
-
 function createWindow() {
   const b = screen.getPrimaryDisplay().bounds; // 전체 화면 영역
   win = new BrowserWindow({
@@ -134,8 +114,10 @@ function createWindow() {
       // 투명 오버레이(screen-saver 레벨) 위에 확실히 뜨게. 모달이 아니므로 메인은 계속 클릭 가능.
       try { child.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
 
-      // 콜백(schedule.pochi-day.com)에 도달하면 보이는 창에 캘린더북을 절대 렌더하지 않는다.
-      //  - code 있음(승인 성공): 숨은 창에서 조용히 토큰 교환 → 보이는 창 즉시 닫기.
+      // 콜백(schedule.pochi-day.com)에 도달하면 보이는 창에 캘린더북을 렌더하지 않는다.
+      //  - code 있음(승인 성공): 콜백 URL을 메인 창(렌더러)으로 보내 **메인 앱 iframe 안에서** 교환하게 한다.
+      //    ⚠️ 위젯 앱은 file:// 안 iframe이라 저장소가 top-level 창과 파티션 분리됨(실측 확인). 별도 창에서
+      //    교환하면 토큰이 다른 파티션에 저장돼 앱이 못 읽는다 → 반드시 iframe 파티션에서 교환해야 한다.
       //  - code 없음(취소/거부): 그냥 닫기.
       let zzHandled = false;
       const zzOnCallback = (ev, url) => {
@@ -144,7 +126,7 @@ function createWindow() {
           if (!/^https:\/\/schedule\.pochi-day\.com\//.test(url || '')) return;
           zzHandled = true;
           if (ev && ev.preventDefault) ev.preventDefault();      // 보이는 창의 캘린더북 로드 자체를 막음
-          if (/[?&]code=/.test(url)) zzExchangeHidden(url);       // 성공: 숨은 창에서 교환
+          if (/[?&]code=/.test(url)) { try { win.webContents.send('notion:callback', url); } catch (_) {} }
           try { child.close(); } catch (_) {}
         } catch (_) {}
       };

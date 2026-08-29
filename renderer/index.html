@@ -168,7 +168,7 @@
 
   <div class="desktop-group side-top is-hidden" id="desktopGroup">
     <div class="desktop">
-      <iframe src="https://schedule.pochi-day.com/" title="포치 캘린더북"></iframe>
+      <iframe id="pochiFrame" src="https://schedule.pochi-day.com/" title="포치 캘린더북"></iframe>
     </div>
 
     <button class="bookmark" id="bookmarkBtn"
@@ -510,6 +510,22 @@
         const d = e.data;
         if (d && d.type === 'pochi:color' && d.hex) applyColor(d.hex);
       });
+    })();
+
+    /* 노션 OAuth 콜백: main이 보낸 콜백 URL(?code=)로 iframe을 이동시켜 **iframe 파티션 안에서** 교환.
+       별도 창에서 교환하면 저장소 파티셔닝 때문에 토큰이 앱과 다른 파티션에 저장됨(실측 확인). */
+    (function () {
+      try {
+        var ov = window.pochiOverlay;
+        if (!ov || !ov.onNotionCallback) return;
+        ov.onNotionCallback(function (url) {
+          try {
+            if (!/^https:\/\/schedule\.pochi-day\.com\//.test(url || '')) return;
+            var f = document.getElementById('pochiFrame');
+            if (f) f.src = url;   // iframe 리로드 → 앱 zzNxSync가 code로 교환·저장(같은 파티션) → 연결·월보기·동기화
+          } catch (e) {}
+        });
+      } catch (e) {}
     })();
   </script>
 
