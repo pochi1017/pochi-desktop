@@ -4,6 +4,14 @@ const fs = require('fs');
 
 let win, tray;
 
+// 표시 이름은 "포치 캘린더북". 단 상태 저장 경로(userData)는 기존 pochi-desktop으로 고정해야
+// 위젯 위치·크기(overlay-state.json)가 초기화되지 않는다. appData 루트는 앱 이름과 무관하므로 안전.
+try { app.setPath('userData', path.join(app.getPath('appData'), 'pochi-desktop')); } catch (e) {}
+app.setName('포치 캘린더북');
+if (process.platform === 'win32') app.setAppUserModelId('com.pochi.calendarbook');
+// 창·작업표시줄 아이콘 = 당근(트레이와 동일 원본). 지정 안 하면 기본 Electron 아이콘이 뜬다.
+const appIcon = nativeImage.createFromPath(path.join(__dirname, 'tray-icon.png'));
+
 // 책갈피 위치·패널 크기 저장 (껐다 켜도 그대로)
 const storeFile = () => path.join(app.getPath('userData'), 'overlay-state.json');
 
@@ -24,6 +32,8 @@ function createWindow() {
   const b = screen.getPrimaryDisplay().bounds; // 전체 화면 영역
   win = new BrowserWindow({
     x: b.x, y: b.y, width: b.width, height: b.height,
+    title: '포치 캘린더북',
+    icon: appIcon,
     frame: false,
     transparent: true,        // 투명 → 실제 바탕화면이 비침
     resizable: false,
@@ -65,6 +75,7 @@ function createWindow() {
           resizable: true,
           autoHideMenuBar: true,
           backgroundColor: '#ffffff',
+          icon: appIcon,
           title: '구글 로그인',
         },
       };
@@ -86,6 +97,7 @@ function createWindow() {
           resizable: true,
           autoHideMenuBar: true,
           backgroundColor: '#ffffff',
+          icon: appIcon,
           title: '노션 연결',
         },
       };
@@ -121,7 +133,7 @@ function makeTray() {
   let icon = nativeImage.createFromPath(path.join(__dirname, 'tray-icon.png'));
   if (!icon.isEmpty()) icon = icon.resize({ width: 18, height: 18 });
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
-  tray.setToolTip('포치 (Pochi)');
+  tray.setToolTip('포치 캘린더북');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '패널 접기 / 펴기', click: () => win && win.webContents.send('overlay:toggle') },
     { label: '새로고침', click: () => win && win.webContents.reload() },

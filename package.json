@@ -1,7 +1,8 @@
 {
   "name": "pochi-desktop",
+  "productName": "포치 캘린더북",
   "version": "1.0.0",
-  "description": "포치 (Pochi) 데스크톱 앱",
+  "description": "포치 캘린더북 데스크톱 앱",
   "main": "main.js",
   "author": "Pochi",
   "scripts": {
