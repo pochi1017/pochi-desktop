@@ -69,6 +69,27 @@ function createWindow() {
         },
       };
     }
+    // 노션 OAuth 연결 → 앱 위 중앙 창으로. 외부 브라우저로 새면 redirect(schedule.pochi-day.com?code=)의
+    // 코드 회수·세션(IndexedDB)이 위젯과 분리돼 연결이 안 잡힌다. authorize는 api.notion.com,
+    // 로그인/워크스페이스 선택은 notion.so/notion.com에서 진행되므로 노션 도메인 전체를 이 창으로 연다.
+    if (/^https:\/\/([a-z0-9-]+\.)?notion\.(so|com)\//.test(url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 720,
+          height: 820,
+          center: true,
+          parent: win,
+          modal: true,
+          transparent: false,
+          frame: true,
+          resizable: true,
+          autoHideMenuBar: true,
+          backgroundColor: '#ffffff',
+          title: '노션 연결',
+        },
+      };
+    }
     if (/^https?:\/\//.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
