@@ -209,9 +209,6 @@ function makeTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '패널 접기 / 펴기', click: () => win && win.webContents.send('overlay:toggle') },
     { label: '새로고침', click: () => win && win.webContents.reload() },
-    { label: 'Windows 시작 시 자동 실행', type: 'checkbox',
-      checked: app.getLoginItemSettings().openAtLogin,
-      click: (item) => applyAutostart(item.checked) },
     { type: 'separator' },
     { label: '종료', click: () => app.quit() },
   ]));
