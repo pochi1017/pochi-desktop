@@ -189,6 +189,18 @@ ipcMain.on('overlay:interactive', (e, on) => {
   else win.setIgnoreMouseEvents(true, { forward: true });
 });
 
+// Windows 로그인 시 자동 실행. 미패키지(electron.exe <dir>) 실행에선 path+args를 명시해야
+// 로그인 시 같은 방식으로 뜬다(콘솔창 안 뜨게 electron.exe 직접 = process.execPath). 패키지되면 기본값.
+function applyAutostart(enable) {
+  try {
+    app.setLoginItemSettings(
+      process.defaultApp
+        ? { openAtLogin: enable, path: process.execPath, args: [app.getAppPath()] }
+        : { openAtLogin: enable }
+    );
+  } catch (e) {}
+}
+
 function makeTray() {
   let icon = nativeImage.createFromPath(path.join(__dirname, 'tray-icon.png'));
   if (!icon.isEmpty()) icon = icon.resize({ width: 18, height: 18 });
@@ -197,6 +209,9 @@ function makeTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '패널 접기 / 펴기', click: () => win && win.webContents.send('overlay:toggle') },
     { label: '새로고침', click: () => win && win.webContents.reload() },
+    { label: 'Windows 시작 시 자동 실행', type: 'checkbox',
+      checked: app.getLoginItemSettings().openAtLogin,
+      click: (item) => applyAutostart(item.checked) },
     { type: 'separator' },
     { label: '종료', click: () => app.quit() },
   ]));
@@ -204,6 +219,7 @@ function makeTray() {
 }
 
 app.whenReady().then(() => {
+  applyAutostart(true);   // 로그인 시 자동 실행 보장 (껐다 켜도 자동)
   createWindow();
   makeTray();
 });

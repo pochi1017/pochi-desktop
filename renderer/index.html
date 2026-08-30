@@ -483,6 +483,8 @@
 
       layout();
       document.body.classList.add('ready');
+      /* 처음 켜질 때: 접힌 책갈피를 잠깐 보여준 뒤 자동으로 펼친다(슬라이드 애니메이션). */
+      setTimeout(() => { if (!open) setOpen(true); }, 900);
     })();
 
     /* ── 앱 색 설정 → 책갈피 색 (crossorigin이라 postMessage로 받음) ── */
